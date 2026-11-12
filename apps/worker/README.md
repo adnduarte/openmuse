@@ -27,6 +27,7 @@ All endpoints except `GET /health` require `Authorization: Bearer <WORKER_TOKEN>
 | POST | `/sessions/:id/close` | `Session`; retains profile and PDFs |
 | GET | `/sessions/:id/screenshot` | 1280 × 800 PNG |
 | GET | `/sessions/:id/read` | `{ url, title, text, truncated }`; visible page text capped at 100,000 characters |
+| GET | `/sessions/:id/snapshot` | `{ snapshotId, url, title, truncated, elements }`; bounded accessibility snapshot with opaque per-element refs |
 | POST | `/sessions/:id/input` | One input below → `Session` |
 | GET | `/sessions/:id/downloads` | `{ downloads: { id, name, size, mimeType: "application/pdf" }[], failures: { id, name, code, message, createdAt }[] }` |
 | GET | `/sessions/:id/downloads/:downloadId` | PDF bytes, attachment disposition |
@@ -44,7 +45,7 @@ Inputs:
 
 Supported keys: Enter, Tab, Escape, Backspace, Delete, arrow keys, Home, End, PageUp, PageDown, Control+a, Meta+a, Shift+Tab. Text input is limited to 10,000 characters; scrolling to ±5,000 pixels per request. Popups and dialogs are dismissed; service workers and WebSockets are disabled. Sites requiring those features may not work yet.
 
-Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401), `BLOCKED_URL` (400), `DNS_UNAVAILABLE`/`NAVIGATION_FAILED` (502), `BROWSER_UNAVAILABLE` (503), `SESSION_CLOSED`/`SESSION_LIMIT` (409), and `DOWNLOAD_TOO_LARGE` (413). The server should separately report a connection failure as “browser worker unavailable”; `/health` does not claim that Chromium can launch.
+Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401), `BLOCKED_URL` (400), `DNS_UNAVAILABLE`/`NAVIGATION_FAILED`/`SNAPSHOT_FAILED` (502), `BROWSER_UNAVAILABLE` (503), `SESSION_CLOSED`/`SESSION_LIMIT` (409), and `DOWNLOAD_TOO_LARGE` (413). The server should separately report a connection failure as “browser worker unavailable”; `/health` does not claim that Chromium can launch.
 
 ## Persistence and limits
 
@@ -55,6 +56,7 @@ Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401)
 - In-progress downloads are monitored and canceled on exceeding the cap. Chromium may buffer bytes before cancellation; the container's temporary filesystem is limited to 256 MiB. The completed-file limit is exact.
 - The latest 100 rejected download outcomes survive restart, including unsupported files, oversized files, download limits and interrupted transfers. Transfers still pending at restart become interrupted outcomes. The app import endpoint returns `{ files, failures }` so rejected files are visible even when no PDF was accepted.
 - Reads return the actual final URL and visible text from Chromium. The read endpoint accepts no script, selector or evaluation input; the public-destination checks apply before and after the read. Empty visible pages return empty text, and unreadable/closed sessions return an error.
+- Snapshots come from Chromium's accessibility tree, never from caller-supplied selectors or scripts. Each element gets an opaque `ref` derived from its role/name and a stable ordinal, plus the `snapshotId` that produced it. Responses are capped at 200 elements, 200-character names, 300-character values and a 48-KiB element budget; `truncated` reports any cap hit. Structural nodes (`generic`, `StaticText`, `paragraph`, …) are omitted.
 - Deleting the Docker volume deletes saved logins and downloads. The persistent volume contains sensitive browser state and should have the same access controls as the app's document store.
 
 ## Network boundary
@@ -68,6 +70,9 @@ This is application-enforced egress policy, not a kernel firewall or a guarantee
 ```sh
 # Repository security and API tests, without starting Chromium:
 pnpm exec tsx --test tests/browser.test.ts
+
+# Snapshot bounds/refs without starting Chromium:
+node --experimental-strip-types --test apps/worker/tests/snapshot.test.ts
 
 # Worker types after npm ci in apps/worker:
 npm --prefix apps/worker run typecheck

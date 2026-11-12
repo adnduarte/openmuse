@@ -10,6 +10,7 @@ import {
 import { WorkerError } from "./errors.ts";
 import { validatePublicUrl } from "./network.ts";
 import { startEgressProxy } from "./proxy.ts";
+import { buildSnapshot, type SnapshotAxNode } from "./snapshot.ts";
 
 export interface Session {
   id: string;
@@ -47,6 +48,7 @@ export async function createBrowserManager(
   const running = new Map<string, Running>();
   const queues = new Map<string, Promise<unknown>>();
   const proxy = await createProxy();
+  let snapshotSeq = 0;
   for (const id of await readdir(dataDir)) {
     if (!SESSION_ID.test(id)) continue;
     try {
@@ -304,6 +306,34 @@ export async function createBrowserManager(
     closeSession: (id: string) => serial(id, () => closeSession(id)),
     screenshot: (id: string) =>
       serial(id, () => active(id).page.screenshot({ type: "png", timeout: 10_000 })),
+    snapshot: (id: string) =>
+      serial(id, async () => {
+        const { page } = active(id);
+        await validatePublicUrl(page.url());
+        const cdp = await page.context().newCDPSession(page);
+        let nodes: SnapshotAxNode[] = [];
+        try {
+          await cdp.send("Accessibility.enable");
+          const tree = (await cdp.send("Accessibility.getFullAXTree")) as {
+            nodes?: SnapshotAxNode[];
+          };
+          nodes = Array.isArray(tree.nodes) ? tree.nodes : [];
+        } catch {
+          throw new WorkerError(
+            "SNAPSHOT_FAILED",
+            "The accessibility tree of the page could not be read.",
+            502,
+          );
+        } finally {
+          await cdp.detach().catch(() => {});
+        }
+        const session = await refresh(id);
+        const snapshotId = ++snapshotSeq;
+        return {
+          snapshotId,
+          ...buildSnapshot(nodes, { url: session.url, title: session.title }),
+        };
+      }),
     read: (id: string) =>
       serial(id, async () => {
         const { page } = active(id);

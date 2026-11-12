@@ -43,6 +43,33 @@ export async function checkBrowserWorker(
     assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
     assert.equal(image.readUInt32BE(16), 1280);
     assert.equal(image.readUInt32BE(20), 800);
+    assert.equal((await fetch(`${address.base}/sessions/${id}/snapshot`)).status, 401);
+    await api(`/sessions/${id}/navigate`, { url: `${fixtureOrigin}/snapshot` });
+    const snapshot = await (await api(`/sessions/${id}/snapshot`)).json();
+    assert.equal(snapshot.url, `${fixtureOrigin}/snapshot`);
+    assert.equal(snapshot.title, fixtureTitle);
+    assert.equal(snapshot.truncated, false);
+    assert(Number.isInteger(snapshot.snapshotId) && snapshot.snapshotId > 0);
+    assert(snapshot.elements.length > 0 && snapshot.elements.length <= 200);
+    assert(Buffer.byteLength(JSON.stringify(snapshot)) <= 64 * 1024);
+    for (const element of snapshot.elements) assert.match(element.ref, /^e[0-9a-f]{16}$/);
+    const named = (role: string, name: string) =>
+      snapshot.elements.some(
+        (element: { role: string; name: string }) =>
+          element.role === role && element.name === name,
+      );
+    assert(named("heading", "Snapshot fixture"));
+    assert(named("button", "Save document"));
+    assert(named("textbox", "Email"));
+    assert(named("checkbox", "Remember me"));
+    assert(named("link", "Next page"));
+    const repeated = await (await api(`/sessions/${id}/snapshot`)).json();
+    assert(repeated.snapshotId > snapshot.snapshotId);
+    assert.deepEqual(
+      repeated.elements.map((element: { ref: string }) => element.ref),
+      snapshot.elements.map((element: { ref: string }) => element.ref),
+      "unchanged page must keep its refs stable",
+    );
     await api(`/sessions/${id}/input`, { type: "scroll", deltaY: 500 });
     const navigated = await (
       await api(`/sessions/${id}/navigate`, { url: `${fixtureOrigin}/other` })

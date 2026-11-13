@@ -41,11 +41,16 @@ Inputs:
 { "type": "text", "text": "Example" }
 { "type": "key", "key": "Enter" }
 { "type": "scroll", "deltaY": 600 }
+{ "type": "click", "ref": "e0123456789abcdef", "snapshotId": 7 }
+{ "type": "text", "ref": "e0123456789abcdef", "snapshotId": 7, "text": "Example" }
+{ "type": "key", "ref": "e0123456789abcdef", "snapshotId": 7, "key": "Enter" }
 ```
+
+`ref` and `snapshotId` always travel together. The worker resolves the pair only against the latest snapshot of that session and acts on the single element marked internally with `data-juxa-ref`; it never accepts a selector, script or evaluation from the caller. A stale `snapshotId` (`SNAPSHOT_STALE`), a ref from another snapshot (`REF_NOT_FOUND`) or an ambiguous match (`REF_AMBIGUOUS`) fails closed without touching the page. Navigation invalidates the snapshot. `text` accepts the alias `texto`; `enter: true` (alias `enviar`) presses Enter after filling.
 
 Supported keys: Enter, Tab, Escape, Backspace, Delete, arrow keys, Home, End, PageUp, PageDown, Control+a, Meta+a, Shift+Tab. Text input is limited to 10,000 characters; scrolling to ±5,000 pixels per request. Popups and dialogs are dismissed; service workers and WebSockets are disabled. Sites requiring those features may not work yet.
 
-Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401), `BLOCKED_URL` (400), `DNS_UNAVAILABLE`/`NAVIGATION_FAILED`/`SNAPSHOT_FAILED` (502), `BROWSER_UNAVAILABLE` (503), `SESSION_CLOSED`/`SESSION_LIMIT` (409), and `DOWNLOAD_TOO_LARGE` (413). The server should separately report a connection failure as “browser worker unavailable”; `/health` does not claim that Chromium can launch.
+Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401), `BLOCKED_URL`/`INVALID_INPUT` (400), `DNS_UNAVAILABLE`/`NAVIGATION_FAILED`/`SNAPSHOT_FAILED` (502), `BROWSER_UNAVAILABLE` (503), `SESSION_CLOSED`/`SESSION_LIMIT`/`SNAPSHOT_STALE`/`REF_NOT_FOUND`/`REF_AMBIGUOUS`/`REF_NOT_ACTIONABLE` (409), and `DOWNLOAD_TOO_LARGE` (413). The server should separately report a connection failure as “browser worker unavailable”; `/health` does not claim that Chromium can launch.
 
 ## Persistence and limits
 
@@ -56,7 +61,7 @@ Errors return `{ error: { code, message } }`. Codes include `UNAUTHORIZED` (401)
 - In-progress downloads are monitored and canceled on exceeding the cap. Chromium may buffer bytes before cancellation; the container's temporary filesystem is limited to 256 MiB. The completed-file limit is exact.
 - The latest 100 rejected download outcomes survive restart, including unsupported files, oversized files, download limits and interrupted transfers. Transfers still pending at restart become interrupted outcomes. The app import endpoint returns `{ files, failures }` so rejected files are visible even when no PDF was accepted.
 - Reads return the actual final URL and visible text from Chromium. The read endpoint accepts no script, selector or evaluation input; the public-destination checks apply before and after the read. Empty visible pages return empty text, and unreadable/closed sessions return an error.
-- Snapshots come from Chromium's accessibility tree, never from caller-supplied selectors or scripts. Each element gets an opaque `ref` derived from its role/name and a stable ordinal, plus the `snapshotId` that produced it. Responses are capped at 200 elements, 200-character names, 300-character values and a 48-KiB element budget; `truncated` reports any cap hit. Structural nodes (`generic`, `StaticText`, `paragraph`, …) are omitted.
+- Snapshots come from Chromium's accessibility tree, never from caller-supplied selectors or scripts. Each element gets an opaque `ref` derived from its role/name and a stable ordinal, plus the `snapshotId` that produced it. At snapshot time the worker marks each usable element with `data-juxa-ref` through CDP so `click`/`text`/`key` can resolve a ref to exactly one element; elements that cannot be marked are omitted and the snapshot is reported as truncated. Responses are capped at 200 elements, 200-character names, 300-character values and a 48-KiB element budget; `truncated` reports any cap hit. Structural nodes (`generic`, `StaticText`, `paragraph`, …) are omitted. Snapshots are in-memory per process: a worker restart invalidates refs, and the next snapshot issues a new `snapshotId`.
 - Deleting the Docker volume deletes saved logins and downloads. The persistent volume contains sensitive browser state and should have the same access controls as the app's document store.
 
 ## Network boundary
@@ -72,7 +77,7 @@ This is application-enforced egress policy, not a kernel firewall or a guarantee
 pnpm exec tsx --test tests/browser.test.ts
 
 # Snapshot bounds/refs without starting Chromium:
-node --experimental-strip-types --test apps/worker/tests/snapshot.test.ts
+node --experimental-strip-types --test apps/worker/tests/snapshot.test.ts apps/worker/tests/snapshot-refs.test.ts
 
 # Worker types after npm ci in apps/worker:
 npm --prefix apps/worker run typecheck

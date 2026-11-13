@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext, CDPSession, Page } from "playwright";
 import {
   capturePdfDownload,
   MAX_DOWNLOAD_BYTES,
@@ -10,7 +10,12 @@ import {
 import { WorkerError } from "./errors.ts";
 import { validatePublicUrl } from "./network.ts";
 import { startEgressProxy } from "./proxy.ts";
-import { buildSnapshot, type SnapshotAxNode } from "./snapshot.ts";
+import { buildSnapshotWithTargets, type SnapshotAxNode, type SnapshotTarget } from "./snapshot.ts";
+import {
+  ATRIBUTO_REF_DOM,
+  resolverSelectorRef,
+  type SnapshotRefState,
+} from "./snapshot-refs.ts";
 
 export interface Session {
   id: string;
@@ -27,6 +32,8 @@ type Running = {
   downloadError?: boolean;
 };
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TECLAS_PERMITIDAS =
+  /^(Enter|Tab|Escape|Backspace|Delete|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown|Control\+a|Meta\+a|Shift\+Tab)$/;
 
 export function validateSessionId(id: unknown): string {
   if (typeof id !== "string" || !SESSION_ID.test(id))
@@ -47,6 +54,7 @@ export async function createBrowserManager(
   const sessions = new Map<string, Session>();
   const running = new Map<string, Running>();
   const queues = new Map<string, Promise<unknown>>();
+  const snapshots = new Map<string, SnapshotRefState>();
   const proxy = await createProxy();
   let snapshotSeq = 0;
   for (const id of await readdir(dataDir)) {
@@ -88,6 +96,105 @@ export async function createBrowserManager(
     value.touched = Date.now();
     return value;
   }
+
+  /**
+   * Marks the DOM elements that own each snapshot ref. Only elements that can
+   * be marked are returned: a ref that cannot be resolved back must never be
+   * exposed to the caller.
+   */
+  async function marcarRefsSnapshot(
+    page: Page,
+    cdp: CDPSession,
+    targets: readonly SnapshotTarget[],
+  ): Promise<Set<string>> {
+    const marcados = new Set<string>();
+    // Fixed worker script; it never accepts caller HTML or selectors.
+    await page.evaluate((attr) => {
+      document.querySelectorAll(`[${attr}]`).forEach((node) => node.removeAttribute(attr));
+    }, ATRIBUTO_REF_DOM);
+    await cdp.send("DOM.enable").catch(() => {});
+    for (const target of targets) {
+      try {
+        const resolved = (await cdp.send("DOM.resolveNode", {
+          backendNodeId: target.backendDOMNodeId,
+        })) as { object?: { objectId?: string } };
+        const objectId = resolved.object?.objectId;
+        if (!objectId) continue;
+        await cdp.send("Runtime.callFunctionOn", {
+          objectId,
+          functionDeclaration: "function (attr, ref) { this.setAttribute(attr, ref); }",
+          arguments: [{ value: ATRIBUTO_REF_DOM }, { value: target.ref }],
+        });
+        // Only expose refs the top-level page can resolve to exactly one
+        // element (elements inside frames are not addressable this way).
+        const count = await page.locator(`[${ATRIBUTO_REF_DOM}="${target.ref}"]`).count();
+        if (count === 1) marcados.add(target.ref);
+      } catch {
+        // Omit the node: an unmarkable ref is not usable.
+      }
+    }
+    return marcados;
+  }
+
+  /** Runs a click/type/key action against a ref already resolved to a selector. */
+  async function accionarPorRef(
+    page: Page,
+    input: Record<string, unknown>,
+    selector: string,
+  ): Promise<void> {
+    const { type, key } = input;
+    if (type === "scroll")
+      throw new WorkerError("INVALID_INPUT", "scroll does not accept a snapshot ref.");
+    const locator = page.locator(selector);
+    const count = await locator.count();
+    if (count === 0)
+      throw new WorkerError(
+        "REF_NOT_FOUND",
+        "The ref is not present in the current page; request a new snapshot.",
+        409,
+      );
+    if (count > 1)
+      throw new WorkerError(
+        "REF_AMBIGUOUS",
+        "The ref resolves to more than one element; request a new snapshot.",
+        409,
+      );
+    try {
+      if (type === "click") {
+        if (input.x !== undefined || input.y !== undefined)
+          throw new WorkerError(
+            "INVALID_INPUT",
+            "Click by ref does not accept x/y coordinates.",
+          );
+        await locator.click({ timeout: 10_000 });
+        return;
+      }
+      if (type === "text") {
+        const text = input.text ?? input.texto;
+        if (typeof text !== "string" || text.length > 10_000)
+          throw new WorkerError("INVALID_INPUT", "Text input is limited to 10,000 characters.");
+        await locator.fill(text);
+        if (input.enviar === true || input.enter === true) await locator.press("Enter");
+        return;
+      }
+      if (type === "key") {
+        if (typeof key !== "string" || !TECLAS_PERMITIDAS.test(key))
+          throw new WorkerError("INVALID_INPUT", "Unsupported key.");
+        await locator.focus();
+        await page.keyboard.press(key);
+        return;
+      }
+      throw new WorkerError("INVALID_INPUT", "Unsupported input type for a snapshot ref.");
+    } catch (error) {
+      if (error instanceof WorkerError) throw error;
+      throw new WorkerError(
+        "REF_NOT_ACTIONABLE",
+        "The element could not be acted on; request a new snapshot.",
+        409,
+      );
+    }
+  }
+
   async function refresh(id: string) {
     const instance = active(id);
     if (instance.page.url() !== "about:blank") await validatePublicUrl(instance.page.url());
@@ -117,6 +224,8 @@ export async function createBrowserManager(
   }
   async function navigate(id: string, url: string) {
     const target = await validatePublicUrl(url);
+    // Any navigation invalidates the refs produced by the previous page.
+    snapshots.delete(id);
     const { page } = active(id);
     try {
       await page.goto(target.url.href, { waitUntil: "domcontentloaded", timeout: 20_000 });
@@ -143,6 +252,7 @@ export async function createBrowserManager(
     const instance = running.get(id);
     const stored = sessions.get(id);
     if (!stored) throw new WorkerError("SESSION_NOT_FOUND", "Browser session not found.", 404);
+    snapshots.delete(id);
     if (instance) {
       try {
         await instance.context.storageState({ path: join(directory(id), "storage.json") });
@@ -161,6 +271,7 @@ export async function createBrowserManager(
   }
   async function createSession(id: string, url: string) {
     await validatePublicUrl(url);
+    snapshots.delete(id);
     if (running.has(id)) return navigate(id, url);
     if (running.size >= maxSessions)
       throw new WorkerError(
@@ -311,28 +422,48 @@ export async function createBrowserManager(
         const { page } = active(id);
         await validatePublicUrl(page.url());
         const cdp = await page.context().newCDPSession(page);
-        let nodes: SnapshotAxNode[] = [];
         try {
-          await cdp.send("Accessibility.enable");
-          const tree = (await cdp.send("Accessibility.getFullAXTree")) as {
-            nodes?: SnapshotAxNode[];
-          };
-          nodes = Array.isArray(tree.nodes) ? tree.nodes : [];
-        } catch {
-          throw new WorkerError(
-            "SNAPSHOT_FAILED",
-            "The accessibility tree of the page could not be read.",
-            502,
+          let nodes: SnapshotAxNode[] = [];
+          try {
+            await cdp.send("Accessibility.enable");
+            const tree = (await cdp.send("Accessibility.getFullAXTree")) as {
+              nodes?: SnapshotAxNode[];
+            };
+            nodes = Array.isArray(tree.nodes) ? tree.nodes : [];
+          } catch {
+            throw new WorkerError(
+              "SNAPSHOT_FAILED",
+              "The accessibility tree of the page could not be read.",
+              502,
+            );
+          }
+          const session = await refresh(id);
+          const snapshotId = ++snapshotSeq;
+          const built = buildSnapshotWithTargets(nodes, {
+            url: session.url,
+            title: session.title,
+          });
+          const marcados = await marcarRefsSnapshot(page, cdp, built.targets);
+          const elements = built.snapshot.elements.filter((element) =>
+            marcados.has(element.ref),
           );
+          // An element that could not be marked is not usable by ref; report
+          // the snapshot as truncated instead of exposing a dead ref.
+          const truncated =
+            built.snapshot.truncated || elements.length !== built.snapshot.elements.length;
+          snapshots.set(id, {
+            snapshotId,
+            refs: new Set(elements.map((element) => element.ref)),
+          });
+          return {
+            snapshotId,
+            ...built.snapshot,
+            truncated,
+            elements,
+          };
         } finally {
           await cdp.detach().catch(() => {});
         }
-        const session = await refresh(id);
-        const snapshotId = ++snapshotSeq;
-        return {
-          snapshotId,
-          ...buildSnapshot(nodes, { url: session.url, title: session.title }),
-        };
       }),
     read: (id: string) =>
       serial(id, async () => {
@@ -364,7 +495,11 @@ export async function createBrowserManager(
       serial(id, async () => {
         const { page } = active(id);
         const { type, x, y, key, text, deltaY } = input;
-        if (
+        const selector = resolverSelectorRef(input, snapshots.get(id));
+        const before = page.url();
+        if (selector) {
+          await accionarPorRef(page, input, selector);
+        } else if (
           type === "click" &&
           typeof x === "number" &&
           typeof y === "number" &&
@@ -378,13 +513,7 @@ export async function createBrowserManager(
           await page.mouse.click(x, y);
         else if (type === "text" && typeof text === "string" && text.length <= 10_000)
           await page.keyboard.insertText(text);
-        else if (
-          type === "key" &&
-          typeof key === "string" &&
-          /^(Enter|Tab|Escape|Backspace|Delete|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown|Control\+a|Meta\+a|Shift\+Tab)$/.test(
-            key,
-          )
-        )
+        else if (type === "key" && typeof key === "string" && TECLAS_PERMITIDAS.test(key))
           await page.keyboard.press(key);
         else if (
           type === "scroll" &&
@@ -394,7 +523,10 @@ export async function createBrowserManager(
         )
           await page.mouse.wheel(0, deltaY);
         else throw new WorkerError("INVALID_INPUT", "Unsupported browser input or coordinates.");
-        return refresh(id);
+        const session = await refresh(id);
+        // A click or Enter may navigate; refs from the old page are stale.
+        if (session.url !== before) snapshots.delete(id);
+        return session;
       }),
     downloads: async (id: string) => {
       const saved = await downloads(id);

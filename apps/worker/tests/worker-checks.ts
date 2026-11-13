@@ -70,6 +70,62 @@ export async function checkBrowserWorker(
       snapshot.elements.map((element: { ref: string }) => element.ref),
       "unchanged page must keep its refs stable",
     );
+    const link = repeated.elements.find(
+      (element: { role: string; name: string }) =>
+        element.role === "link" && element.name === "Next page",
+    );
+    assert(link);
+    const stale = await fetch(`${address.base}/sessions/${id}/input`, {
+      headers,
+      method: "POST",
+      body: JSON.stringify({
+        type: "click",
+        ref: link.ref,
+        snapshotId: repeated.snapshotId - 1,
+      }),
+    });
+    assert.equal(stale.status, 409);
+    assert.equal((await stale.json()).error.code, "SNAPSHOT_STALE");
+    const foreign = await fetch(`${address.base}/sessions/${id}/input`, {
+      headers,
+      method: "POST",
+      body: JSON.stringify({
+        type: "click",
+        ref: "e0000000000000000",
+        snapshotId: repeated.snapshotId,
+      }),
+    });
+    assert.equal(foreign.status, 409);
+    assert.equal((await foreign.json()).error.code, "REF_NOT_FOUND");
+    await api(`/sessions/${id}/input`, {
+      type: "click",
+      ref: link.ref,
+      snapshotId: repeated.snapshotId,
+    });
+    assert.equal(
+      (await (await api(`/sessions/${id}/read`)).json()).text,
+      "Another fixture page.",
+      "click by ref must navigate to the fixture link target",
+    );
+    await api(`/sessions/${id}/navigate`, { url: `${fixtureOrigin}/snapshot` });
+    const refSnapshot = await (await api(`/sessions/${id}/snapshot`)).json();
+    const email = refSnapshot.elements.find(
+      (element: { role: string; name: string }) =>
+        element.role === "textbox" && element.name === "Email",
+    );
+    assert(email);
+    await api(`/sessions/${id}/input`, {
+      type: "text",
+      ref: email.ref,
+      snapshotId: refSnapshot.snapshotId,
+      text: "nuevo@example.test",
+    });
+    const typed = await (await api(`/sessions/${id}/snapshot`)).json();
+    const emailTyped = typed.elements.find(
+      (element: { role: string; name: string }) =>
+        element.role === "textbox" && element.name === "Email",
+    );
+    assert.equal(emailTyped?.value, "nuevo@example.test");
     await api(`/sessions/${id}/input`, { type: "scroll", deltaY: 500 });
     const navigated = await (
       await api(`/sessions/${id}/navigate`, { url: `${fixtureOrigin}/other` })

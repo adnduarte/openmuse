@@ -179,3 +179,103 @@ test("real worker API preserves fixture downloads and browser storage across pro
     }
   }
 });
+
+test("real worker resolves ref+snapshotId to data-juxa-ref and fails closed", {
+  timeout: 90_000,
+}, async (t) => {
+  const fixture = await createBrowserFixture();
+  t.after(async () => {
+    try {
+      await fixture.close();
+    } finally {
+      assert.deepEqual(fixture.unexpected, []);
+    }
+  });
+  const dataDir = await mkdtemp(join(tmpdir(), "openmuse-browser-refs-"));
+  const id = randomUUID();
+  let browser: Awaited<ReturnType<typeof createBrowserManager>> | undefined;
+  try {
+    browser = await createBrowserManager({ dataDir }, fixture.createProxy);
+    await browser.create(id, `${fixtureOrigin}/snapshot`);
+
+    const first = await browser.snapshot(id);
+    const link = first.elements.find((element) => element.role === "link" && element.name === "Next page");
+    assert(link, "the snapshot must expose the fixture link");
+    const email = first.elements.find(
+      (element) => element.role === "textbox" && element.name === "Email",
+    );
+    assert(email, "the snapshot must expose the fixture textbox");
+
+    // Both fields are required together; invalid shapes never touch the page.
+    await assert.rejects(browser.input(id, { type: "click", ref: link.ref }), {
+      code: "INVALID_INPUT",
+    });
+    await assert.rejects(browser.input(id, { type: "click", snapshotId: first.snapshotId }), {
+      code: "INVALID_INPUT",
+    });
+    await assert.rejects(
+      browser.input(id, { type: "click", ref: "../etc/passwd", snapshotId: first.snapshotId }),
+      { code: "INVALID_INPUT" },
+    );
+
+    // A stale snapshot or a foreign ref is fail-closed.
+    await assert.rejects(
+      browser.input(id, {
+        type: "click",
+        ref: link.ref,
+        snapshotId: first.snapshotId - 1,
+      }),
+      { code: "SNAPSHOT_STALE" },
+    );
+    await assert.rejects(
+      browser.input(id, {
+        type: "click",
+        ref: "e0000000000000000",
+        snapshotId: first.snapshotId,
+      }),
+      { code: "REF_NOT_FOUND" },
+    );
+
+    // Click by ref navigates; the previous snapshot is invalid afterwards.
+    await browser.input(id, {
+      type: "click",
+      ref: link.ref,
+      snapshotId: first.snapshotId,
+    });
+    assert.equal((await browser.read(id)).text, "Another fixture page.");
+    await assert.rejects(
+      browser.input(id, {
+        type: "click",
+        ref: link.ref,
+        snapshotId: first.snapshotId,
+      }),
+      { code: "SNAPSHOT_STALE" },
+    );
+
+    // Type by ref updates the field; the next snapshot observes the value.
+    await browser.navigate(id, `${fixtureOrigin}/snapshot`);
+    const second = await browser.snapshot(id);
+    const emailSecond = second.elements.find(
+      (element) => element.role === "textbox" && element.name === "Email",
+    );
+    assert(emailSecond);
+    await browser.input(id, {
+      type: "text",
+      ref: emailSecond.ref,
+      snapshotId: second.snapshotId,
+      text: "nuevo@example.test",
+    });
+    const third = await browser.snapshot(id);
+    const emailThird = third.elements.find(
+      (element) => element.role === "textbox" && element.name === "Email",
+    );
+    assert.equal(emailThird?.value, "nuevo@example.test");
+  } finally {
+    try {
+      await browser?.close();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(join("/tmp", `openmuse-downloads-${id}`), { recursive: true, force: true });
+    }
+  }
+});

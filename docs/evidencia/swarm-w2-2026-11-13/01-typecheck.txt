@@ -1,0 +1,6 @@
+npm warn Unknown user config "always-auth" (//us-central1-npm.pkg.dev/crmjuxa/juxa-npm/:always-auth). This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @openmuse/browser-worker@0.1.0 typecheck
+> tsc --noEmit
+
+exit=0

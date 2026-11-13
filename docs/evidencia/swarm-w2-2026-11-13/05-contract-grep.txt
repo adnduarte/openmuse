@@ -1,0 +1,9 @@
+apps/worker/src/snapshot-refs.ts:15: *     `SNAPSHOT_STALE`, unknown ref → `REF_NOT_FOUND`);
+apps/worker/src/snapshot-refs.ts:21:export const ATRIBUTO_REF_DOM = "data-juxa-ref";
+apps/worker/src/snapshot-refs.ts:24:export const PATRON_REF_SNAPSHOT = /^e[0-9a-f]{16}$/;
+apps/worker/src/snapshot-refs.ts:65:export function selectorRefDom(ref: string): string {
+apps/worker/src/snapshot-refs.ts:85:      "SNAPSHOT_STALE",
+apps/worker/src/snapshot-refs.ts:91:      "REF_NOT_FOUND",
+apps/worker/src/snapshot-refs.ts:95:  return selectorRefDom(target.ref);
+apps/worker/src/browser.ts:152:        "REF_NOT_FOUND",
+apps/worker/src/browser.ts:158:        "REF_AMBIGUOUS",

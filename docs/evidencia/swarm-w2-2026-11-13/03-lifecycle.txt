@@ -1,0 +1,12 @@
+✔ real Chromium cleans failed profiles and restores a saved UUID after worker restart (658.333667ms)
+✔ real worker API preserves fixture downloads and browser storage across process restart (1318.130333ms)
+✔ real worker resolves ref+snapshotId to data-juxa-ref and fails closed (211.365ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2276.61525
+exit=0

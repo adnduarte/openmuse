@@ -1,0 +1,29 @@
+npm warn Unknown user config "always-auth" (//us-central1-npm.pkg.dev/crmjuxa/juxa-npm/:always-auth). This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> @openmuse/browser-worker@0.1.0 test:snapshot
+> node --experimental-strip-types --test tests/snapshot.test.ts tests/snapshot-refs.test.ts
+
+✔ sin ref ni snapshotId no hay resolución (entradas legacy intactas) (0.344833ms)
+✔ ref→selector usa exactamente data-juxa-ref y el contrato de W1 (0.096042ms)
+✔ ref y snapshotId deben viajar juntos (0.084667ms)
+✔ rechaza refs que no son opacos e+16 hex (sin selectores ni rutas) (0.078709ms)
+✔ rechaza snapshotId no entero o negativo (0.06925ms)
+✔ snapshot vencido o ausente → SNAPSHOT_STALE (fail-closed) (0.44975ms)
+✔ ref ajeno al snapshot vigente → REF_NOT_FOUND (0.042ms)
+✔ un snapshot nuevo reemplaza los refs anteriores (0.043416ms)
+✔ snapshot maps accessible roles/names and ignores structural nodes (0.935292ms)
+✔ refs are opaque, stable and distinct for repeated role/name pairs (0.209042ms)
+✔ snapshot caps the number of elements and reports truncation (0.409ms)
+✔ snapshot caps long names and the serialized byte budget (0.74075ms)
+✔ unnamed interactive roles stay; unnamed non-interactive roles do not (0.162583ms)
+✔ buildSnapshotWithTargets maps refs to backend DOM nodes without leaking ids (0.169917ms)
+✔ buildSnapshotWithTargets rejects non-positive or fractional backend ids (0.066667ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.925458
+exit=0

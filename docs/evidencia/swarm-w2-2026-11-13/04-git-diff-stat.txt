@@ -1,0 +1,10 @@
+ apps/worker/README.md                   |  11 +-
+ apps/worker/package.json                |   2 +-
+ apps/worker/src/browser.ts              | 188 +++++++++++++++++++++++++++-----
+ apps/worker/src/snapshot-refs.ts        |  96 ++++++++++++++++
+ apps/worker/src/snapshot.ts             |  59 ++++++++--
+ apps/worker/tests/lifecycle.test.ts     | 100 +++++++++++++++++
+ apps/worker/tests/snapshot-refs.test.ts | 120 ++++++++++++++++++++
+ apps/worker/tests/snapshot.test.ts      |  34 ++++++
+ apps/worker/tests/worker-checks.ts      |  56 ++++++++++
+ 9 files changed, 627 insertions(+), 39 deletions(-)

@@ -1,0 +1,83 @@
+# Harness gate that still returns 501 before reaching the worker
+# repo: https://github.com/Juxa-Mx-Dev/juxa-harness.git
+# commit: 067da4a55
+
+852-
+853-const errorEntrada = (detalle) =>
+854-  new ErrorHttpComputer(400, "AGENT_COMPUTER_ENTRADA_INVALIDA", detalle);
+855-
+856:const errorNoSoportado = (metodo, detalle = undefined) =>
+857-  new ErrorHttpComputer(
+858-    501,
+859-    "AGENT_COMPUTER_NO_SOPORTADO",
+--
+1981-          { codigo },
+1982-        );
+1983-      }
+1984-      // Worker desplegado sin el endpoint: fail-closed honesto, sin simular.
+1985:      throw errorNoSoportado(
+1986-        "snapshot",
+1987-        "El browser worker desplegado no expone GET /sessions/:id/snapshot (404/405/501); no se simula.",
+1988-      );
+--
+2508-      if (dirControlDurable(env)) {
+2509-        // Configurado pero no disponible: 503, no 501 (no es "no soportado").
+2510-        throw errorControlNoDisponible(motivoControl);
+2511-      }
+2512:      throw errorNoSoportado(
+2513-        `control.${accion || "?"}`,
+2514-        `Sin almacén durable de control no se simula el handoff humano ` +
+2515-          `(configura ${ENV_HITL_STATE_DIR}, ${ENV_CODE_AGENT_STATE_DIR} o ${ENV_ENTERPRISE_SECURITY_DATA_DIR}).`,
+--
+2633-        throw new ErrorHttpComputer(405, "method_not_allowed", null);
+2634-      }
+2635-      const body = await leerJson(req, leerCuerpo);
+2636-      if (body.ref !== undefined || body.snapshotId !== undefined) {
+2637:        throw errorNoSoportado("click por ref (requiere snapshot)");
+2638-      }
+2639-      return atenderInput(res, normalizado, {
+2640-        type: "click",
+--
+2648-        throw new ErrorHttpComputer(405, "method_not_allowed", null);
+2649-      }
+2650-      const body = await leerJson(req, leerCuerpo);
+2651-      if (body.ref !== undefined || body.snapshotId !== undefined) {
+2652:        throw errorNoSoportado("type por ref (requiere snapshot)");
+2653-      }
+2654-      return atenderInput(res, normalizado, {
+2655-        type: "text",
+
+# function definition
+
+# const definition
+const errorNoSoportado = (metodo, detalle = undefined) =>
+  new ErrorHttpComputer(
+    501,
+    "AGENT_COMPUTER_NO_SOPORTADO",
+    detalle ?? `El backend real no implementa «${metodo}» (no se simula).`,
+    { metodo, codigo: "NO_SOPORTADO" },
+  );
+
+const errorWorkspaceNoConfigurado = () =>
+  new ErrorHttpComputer(
+    503,
+
+# key branch silently drops ref/snapshotId (no 501 check)
+        type: "text",
+        text: body.text ?? body.texto,
+      });
+    }
+    if (verbo === "key") {
+      if (method !== "POST") {
+        res.setHeader("allow", "POST");
+        throw new ErrorHttpComputer(405, "method_not_allowed", null);
+      }
+      const body = await leerJson(req, leerCuerpo);
+      return atenderInput(res, normalizado, {
+        type: "key",
+        key: body.key ?? body.tecla,
+      });
+    }
+    if (verbo === "scroll") {
+      if (method !== "POST") {
+        res.setHeader("allow", "POST");

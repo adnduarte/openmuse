@@ -4,7 +4,8 @@
 (fork de `CopilotKit/openmuse`), servicio `apps/worker`.
 **Rama:** `fix/w2-browser-ref-2026-11-14`, apilada sobre
 `feat/worker-snapshot-2026-11-12` (H4, PR abierto `adnduarte/openmuse#1`).
-**PR de este carril:** se registra al abrirse (base H4, no `main`).
+**PR de este carril:** https://github.com/adnduarte/openmuse/pull/3
+(base H4, no `main`).
 
 ## Qué se cableó
 

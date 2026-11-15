@@ -58,6 +58,8 @@ H4 sin aportar nada al contrato.
 | `04-git-diff-stat.txt` | `git diff --cached --stat -- apps/worker` | 9 archivos, +668/−39 |
 | `05-contract-grep.txt` | grep de constantes y códigos | — |
 | `06-harness-501.txt` | gate 501 del adaptador del harness | — |
+| `07-verificacion-2026-11-15.txt` | re-verificación local del 2026-11-15 (typecheck, 15/15, 3/3) | exit 0 / 15 PASS / 3 PASS |
+| `08-verificacion-2026-11-15-sesion.txt` | re-verificación independiente de cierre del carril (mismo HEAD `13c4291`, PR #3 OPEN/MERGEABLE) | exit 0 / 15 PASS / 3 PASS |
 
 La prueba de lifecycle W2 cubre:
 

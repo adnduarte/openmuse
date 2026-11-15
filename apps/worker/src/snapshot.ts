@@ -15,6 +15,8 @@ export interface SnapshotAxNode {
   name?: { value?: unknown };
   value?: { value?: unknown };
   properties?: Array<{ name?: string; value?: { value?: unknown } }>;
+  /** CDP backend DOM node id, used only inside the worker to mark the DOM. */
+  backendDOMNodeId?: number;
 }
 
 export interface SnapshotElement {
@@ -32,6 +34,17 @@ export interface SnapshotBody {
   title: string;
   truncated: boolean;
   elements: SnapshotElement[];
+}
+
+/** Internal mapping used to mark the DOM element that owns each ref. */
+export interface SnapshotTarget {
+  ref: string;
+  backendDOMNodeId: number;
+}
+
+export interface SnapshotBuild {
+  snapshot: SnapshotBody;
+  targets: SnapshotTarget[];
 }
 
 export const SNAPSHOT_MAX_ELEMENTS = 200;
@@ -113,21 +126,23 @@ function boundedText(
 }
 
 /**
- * Converts a CDP accessibility tree into the worker snapshot contract.
+ * Converts a CDP accessibility tree into the worker snapshot contract and
+ * returns the internal DOM targets used to mark `data-juxa-ref`.
  *
  * `snapshotId` is supplied by the caller (the browser manager keeps a
  * per-process monotonic counter); refs are derived only from the tree, so two
  * consecutive snapshots of an unchanged page return identical refs.
  */
-export function buildSnapshot(
+export function buildSnapshotWithTargets(
   nodes: readonly SnapshotAxNode[],
   options: {
     url: string;
     title: string;
   },
-): SnapshotBody {
+): SnapshotBuild {
   const state = { truncated: false };
   const elements: SnapshotElement[] = [];
+  const targets = new Map<string, SnapshotTarget>();
   const ordinals = new Map<string, number>();
   let bytes = 0;
 
@@ -167,6 +182,16 @@ export function buildSnapshot(
     }
     bytes += elementBytes;
     elements.push(element);
+    if (
+      typeof node.backendDOMNodeId === "number" &&
+      Number.isInteger(node.backendDOMNodeId) &&
+      node.backendDOMNodeId > 0
+    ) {
+      targets.set(element.ref, {
+        ref: element.ref,
+        backendDOMNodeId: node.backendDOMNodeId,
+      });
+    }
   }
 
   // JSON array separators are not part of each element's own byte count.
@@ -178,10 +203,30 @@ export function buildSnapshot(
     state.truncated = true;
   }
 
+  const refs = new Set(elements.map((element) => element.ref));
   return {
-    url: options.url,
-    title: options.title,
-    truncated: state.truncated,
-    elements,
+    snapshot: {
+      url: options.url,
+      title: options.title,
+      truncated: state.truncated,
+      elements,
+    },
+    targets: [...targets.values()].filter((target) => refs.has(target.ref)),
   };
+}
+
+/**
+ * Converts a CDP accessibility tree into the worker snapshot contract.
+ *
+ * Kept as the pure, list-only entry point used by tests and callers that do
+ * not need DOM targets.
+ */
+export function buildSnapshot(
+  nodes: readonly SnapshotAxNode[],
+  options: {
+    url: string;
+    title: string;
+  },
+): SnapshotBody {
+  return buildSnapshotWithTargets(nodes, options).snapshot;
 }

@@ -1,0 +1,70 @@
+# Re-verificación local — 2026-11-15 (sin cambios de código)
+
+Rama: fix/w2-browser-ref-2026-11-14
+HEAD: a8836f3286a9a7bb4888e9336115444287d3715f
+Remoto fork: a8836f3 (refs/heads/fix/w2-browser-ref-2026-11-14)
+PR: https://github.com/adnduarte/openmuse/pull/3
+    estado OPEN, base feat/worker-snapshot-2026-11-12 (H4), no main.
+Entorno: Node v24.22.2, Playwright 1.62.1, Chromium real
+(PLAYWRIGHT_BROWSERS_PATH=/Users/adnduarte/juxa-pw-browsers).
+
+## 1. Typecheck
+
+$ npm --prefix apps/worker run typecheck
+> @openmuse/browser-worker@0.1.0 typecheck
+> tsc --noEmit
+exit=0
+
+## 2. Unitarios (snapshot + snapshot-refs)
+
+$ npm --prefix apps/worker run test:snapshot
+> node --experimental-strip-types --test tests/snapshot.test.ts tests/snapshot-refs.test.ts
+
+✔ sin ref ni snapshotId no hay resolución (entradas legacy intactas)
+✔ ref→selector usa exactamente data-juxa-ref y el contrato de W1
+✔ ref y snapshotId deben viajar juntos
+✔ rechaza refs que no son opacos e+16 hex (sin selectores ni rutas)
+✔ rechaza snapshotId no entero o negativo
+✔ snapshot vencido o ausente → SNAPSHOT_STALE (fail-closed)
+✔ ref ajeno al snapshot vigente → REF_NOT_FOUND
+✔ un snapshot nuevo reemplaza los refs anteriores
+✔ snapshot maps accessible roles/names and ignores structural nodes
+✔ refs are opaque, stable and distinct for repeated role/name pairs
+✔ snapshot caps the number of elements and reports truncation
+✔ snapshot caps long names and the serialized byte budget
+✔ unnamed interactive roles stay; unnamed non-interactive roles do not
+✔ buildSnapshotWithTargets maps refs to backend DOM nodes without leaking ids
+✔ buildSnapshotWithTargets rejects non-positive or fractional backend ids
+tests 15 / pass 15 / fail 0 / exit=0
+
+## 3. Lifecycle con Chromium real
+
+$ PLAYWRIGHT_BROWSERS_PATH=/Users/adnduarte/juxa-pw-browsers \
+  node --experimental-strip-types --test apps/worker/tests/lifecycle.test.ts
+✔ real Chromium cleans failed profiles and restores a saved UUID after worker restart
+✔ real worker API preserves fixture downloads and browser storage across process restart
+✔ real worker resolves ref+snapshotId to data-juxa-ref and fails closed
+tests 3 / pass 3 / fail 0 / exit=0
+
+Cubre: ref+snapshotId obligatorios juntos, ref con forma de ruta,
+snapshot vencido/ref ajeno, click por ref que navega, invalidación tras
+navegar, text por ref (alias `texto`), key por ref (alias `tecla`),
+scroll con ref y click con ref+coordenadas → INVALID_INPUT.
+
+## 4. Estado del remoto (no se tocó main)
+
+- fork/fix/w2-browser-ref-2026-11-14 = a8836f3 = HEAD local.
+- fork/main = a4944f4 (sin cambios; el PR no apunta a main).
+- El PR #3 no tiene checks de CI configurados en la rama (`no checks reported`).
+
+## 5. Por qué el 501 observado no nace en el worker
+
+`juxa-harness` commit 067da4a55, `server/agent-computer.mjs`:
+- 2636-2637: `POST …/click` con `ref` o `snapshotId` → 501 `AGENT_COMPUTER_NO_SOPORTADO`.
+- 2651-2652: `POST …/type` con `ref` o `snapshotId` → 501 `AGENT_COMPUTER_NO_SOPORTADO`.
+- 2659-2669: el branch `key` descarta `ref`/`snapshotId` sin reenviarlos.
+
+Es decir: el adaptador HTTP del harness rechaza el par antes de llamar al
+worker. Este carril implementa y prueba el lado worker, como se pidió; el
+cableado end-to-end del adaptador queda fuera del alcance y está documentado
+en `06-harness-501.txt`.

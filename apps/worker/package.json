@@ -7,7 +7,7 @@
     "start": "node --experimental-strip-types src/index.ts",
     "typecheck": "tsc --noEmit",
     "test:docker": "node tests/run-docker.mjs",
-    "test:snapshot": "node --experimental-strip-types --test tests/snapshot.test.ts"
+    "test:snapshot": "node --experimental-strip-types --test tests/snapshot.test.ts tests/snapshot-refs.test.ts"
   },
   "dependencies": {
     "playwright": "1.62.1"

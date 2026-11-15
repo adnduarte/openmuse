@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildSnapshot,
+  buildSnapshotWithTargets,
   SNAPSHOT_MAX_BYTES,
   SNAPSHOT_MAX_ELEMENTS,
   SNAPSHOT_MAX_NAME_LENGTH,
@@ -118,4 +119,37 @@ test("unnamed interactive roles stay; unnamed non-interactive roles do not", () 
     snapshot.elements.map((element) => element.role),
     ["button"],
   );
+});
+
+test("buildSnapshotWithTargets maps refs to backend DOM nodes without leaking ids", () => {
+  const nodes = [
+    { ...node("button", "Save"), backendDOMNodeId: 41 },
+    { ...node("textbox", "Email"), backendDOMNodeId: 42 },
+    node("link", "No backend id"),
+  ];
+  const built = buildSnapshotWithTargets(nodes, page);
+
+  assert.deepEqual(
+    built.targets.map((target) => target.backendDOMNodeId),
+    [41, 42],
+    "only nodes with a valid backendDOMNodeId are targeted",
+  );
+  assert.deepEqual(
+    built.targets.map((target) => target.ref),
+    built.snapshot.elements.slice(0, 2).map((element) => element.ref),
+  );
+  assert.equal(JSON.stringify(built.snapshot).includes("backendDOMNodeId"), false);
+});
+
+test("buildSnapshotWithTargets rejects non-positive or fractional backend ids", () => {
+  const built = buildSnapshotWithTargets(
+    [
+      { ...node("button", "Zero"), backendDOMNodeId: 0 },
+      { ...node("button", "Negative"), backendDOMNodeId: -1 },
+      { ...node("button", "Fraction"), backendDOMNodeId: 1.5 },
+    ],
+    page,
+  );
+  assert.deepEqual(built.targets, []);
+  assert.equal(built.snapshot.elements.length, 3);
 });

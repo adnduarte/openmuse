@@ -1,0 +1,22 @@
+apps/worker/src/snapshot-refs.ts:15: *     `SNAPSHOT_STALE`, unknown ref → `REF_NOT_FOUND`);
+apps/worker/src/snapshot-refs.ts:21:export const ATRIBUTO_REF_DOM = "data-juxa-ref";
+apps/worker/src/snapshot-refs.ts:24:export const PATRON_REF_SNAPSHOT = /^e[0-9a-f]{16}$/;
+apps/worker/src/snapshot-refs.ts:39:  return new WorkerError("INVALID_INPUT", message);
+apps/worker/src/snapshot-refs.ts:52:  if (typeof input.ref !== "string" || !PATRON_REF_SNAPSHOT.test(input.ref))
+apps/worker/src/snapshot-refs.ts:66:  if (!PATRON_REF_SNAPSHOT.test(ref))
+apps/worker/src/snapshot-refs.ts:68:  return `[${ATRIBUTO_REF_DOM}="${ref}"]`;
+apps/worker/src/snapshot-refs.ts:85:      "SNAPSHOT_STALE",
+apps/worker/src/snapshot-refs.ts:91:      "REF_NOT_FOUND",
+apps/worker/src/browser.ts:15:  ATRIBUTO_REF_DOM,
+apps/worker/src/browser.ts:114:    }, ATRIBUTO_REF_DOM);
+apps/worker/src/browser.ts:126:          arguments: [{ value: ATRIBUTO_REF_DOM }, { value: target.ref }],
+apps/worker/src/browser.ts:130:        const count = await page.locator(`[${ATRIBUTO_REF_DOM}="${target.ref}"]`).count();
+apps/worker/src/browser.ts:149:      throw new WorkerError("INVALID_INPUT", "scroll does not accept a snapshot ref.");
+apps/worker/src/browser.ts:154:        "REF_NOT_FOUND",
+apps/worker/src/browser.ts:160:        "REF_AMBIGUOUS",
+apps/worker/src/browser.ts:168:            "INVALID_INPUT",
+apps/worker/src/browser.ts:177:          throw new WorkerError("INVALID_INPUT", "Text input is limited to 10,000 characters.");
+apps/worker/src/browser.ts:184:          throw new WorkerError("INVALID_INPUT", "Unsupported key.");
+apps/worker/src/browser.ts:189:      throw new WorkerError("INVALID_INPUT", "Unsupported input type for a snapshot ref.");
+apps/worker/src/browser.ts:193:        "REF_NOT_ACTIONABLE",
+apps/worker/src/browser.ts:527:        else throw new WorkerError("INVALID_INPUT", "Unsupported browser input or coordinates.");

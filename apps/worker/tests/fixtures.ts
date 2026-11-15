@@ -38,6 +38,16 @@ export async function createBrowserFixture(options: { host?: string; port?: numb
     let body: string;
     if (path === "/page") body = fixtureText;
     else if (path === "/other") body = "Another fixture page.";
+    else if (path === "/snapshot")
+      body = [
+        "<main>",
+        "<h1>Snapshot fixture</h1>",
+        "<button>Save document</button>",
+        '<label for="email">Email</label><input id="email" type="email" value="person@example.test">',
+        '<label><input type="checkbox"> Remember me</label>',
+        '<a href="/other">Next page</a>',
+        "</main>",
+      ].join("");
     else if (path === "/large?size=100000") body = "x".repeat(100_000);
     else if (path === "/large?size=100001") body = "x".repeat(100_001);
     else if (path === "/seed")
